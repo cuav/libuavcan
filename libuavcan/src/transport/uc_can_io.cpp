@@ -7,6 +7,72 @@
 #include <uavcan/debug.hpp>
 #include <cassert>
 
+
+#pragma pack(1)
+typedef struct {
+    uint8_t transfer_id:5;          /*!< 转移ID*/
+    uint8_t toggle_bit:1;           /*!< 翻转位 */
+    uint8_t end_of_transfer:1;      /*!< 结束转移 */
+    uint8_t start_of_transfer:1;    /*!< 开始转移 */
+}can_payload_t;
+
+typedef union {
+    struct {
+        uint8_t node_id:7;    /*!< 源节点ID */
+        uint8_t service:1;
+        uint16_t message_id:16;  /*!< 包ID */
+        uint8_t priority:5;      /*!< 优先级 */
+        uint8_t frame:3;         /*!< 框架类型 */
+    }broadcast;     /*!< 广播传输 */
+
+    struct {
+        uint8_t node_id:7;    /*!< 源节点ID */
+        uint8_t service:1;
+        uint8_t  message_id_low:2;  /*!< 消息类型ID的低位 */
+        uint16_t Discriminator:14;  /*!< 判别器 */
+        uint8_t  priority:5;        /*!< 优先级 */
+        uint8_t  frame:3;           /*!< 框架类型 */
+    }cryptonym;     /*!< 匿名传输*/
+
+    struct {
+        uint8_t node_id:7;          /*!< 源节点ID */
+        uint8_t service:1;
+        uint8_t target_id:7;       /*!< 目的节点ID */
+        uint8_t ack:1;               /*!< 是否应答1 应答，0不应答 */
+        uint8_t service_id:8;     /*!< 判别器 */
+        uint8_t priority:5;        /*!< 优先级 */
+        uint8_t frame:3;           /*!< 框架类型 */
+    }service;     /*!< 服务传输*/
+    uint32_t data;
+}uavcan_frame_t;
+
+#pragma pack(1)
+
+void uavcan_printf_err(uint8_t b, uint8_t len, const uint32_t *id, const uint8_t *data)
+{
+	can_payload_t *p = (can_payload_t *)data;
+    uavcan_frame_t *frame = (uavcan_frame_t *)id;
+
+    uint16_t node_id = 0;
+    if (frame->broadcast.node_id == 0) {
+        node_id = frame->cryptonym.message_id_low;
+    }
+    else if (frame->broadcast.service == 0) {
+        node_id = frame->broadcast.message_id;
+    }
+    else {
+        node_id = frame->service.service_id;
+    }
+
+	printf("CanIface%d %d %04d (%d %d %d %02x)\r\n"
+        , b
+        , len
+        , node_id
+		, p->start_of_transfer
+		, p->end_of_transfer
+		, p->toggle_bit
+		, p->transfer_id);
+}
 namespace uavcan
 {
 /*
@@ -230,6 +296,7 @@ bool CanTxQueue::topPriorityHigherOrEqual(const CanFrame& rhs_frame) const
  */
 int CanIOManager::sendToIface(uint8_t iface_index, const CanFrame& frame, MonotonicTime tx_deadline, CanIOFlags flags)
 {
+    uavcan_printf_err(0, tx_queues_[0]->getLength(), &frame.id, &frame.data[frame.dlc -1]);
     UAVCAN_ASSERT(iface_index < MaxCanIfaces);
     ICanIface* const iface = driver_.getIface(iface_index);
     if (iface == UAVCAN_NULLPTR)
@@ -349,6 +416,7 @@ int CanIOManager::send(const CanFrame& frame, MonotonicTime tx_deadline, Monoton
 
     int retval = 0;
 
+    //uavcan_printf_err(iface_mask, tx_queues_[0]->getLength(), &frame.id, &frame.data[frame.dlc -1]);
     while (true)        // Somebody please refactor this.
     {
         if (iface_mask == 0)

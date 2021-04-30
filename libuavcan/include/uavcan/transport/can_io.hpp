@@ -103,7 +103,7 @@ public:
     ~CanTxQueue();
 
     void push(const CanFrame& frame, MonotonicTime tx_deadline, Qos qos, CanIOFlags flags);
-
+    uint8_t getLength()const {return queue_.getLength(); };
     Entry* peek();               // Modifier
     void remove(Entry*& entry);
     const CanFrame* getTopPriorityPendingFrame() const;
