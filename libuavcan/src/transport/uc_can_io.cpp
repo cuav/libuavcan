@@ -48,7 +48,7 @@ typedef union {
 
 #pragma pack(1)
 
-void uavcan_printf_err(uint8_t b, uint8_t len, const uint32_t *id, const uint8_t *data)
+void uavcan_printf_err(uint8_t b, uint8_t len, uint32_t diff, const uint32_t *id, const uint8_t *data)
 {
 	can_payload_t *p = (can_payload_t *)data;
     uavcan_frame_t *frame = (uavcan_frame_t *)id;
@@ -64,9 +64,10 @@ void uavcan_printf_err(uint8_t b, uint8_t len, const uint32_t *id, const uint8_t
         node_id = frame->service.service_id;
     }
 
-	printf("CanIface%d %d %04d (%d %d %d %02x)\r\n"
+	printf("CanIface%d %d %04d %04d (%d %d %d %02x)\r\n"
         , b
         , len
+        , diff
         , node_id
 		, p->start_of_transfer
 		, p->end_of_transfer
@@ -241,6 +242,7 @@ void CanTxQueue::push(const CanFrame& frame, MonotonicTime tx_deadline, Qos qos,
     Entry* entry = new (praw) Entry(frame, tx_deadline, qos, flags);
     UAVCAN_ASSERT(entry);
     queue_.insertBefore(entry, PriorityInsertionComparator(frame));
+    en_queue_cnt_++;
 }
 
 CanTxQueue::Entry* CanTxQueue::peek()
@@ -296,7 +298,11 @@ bool CanTxQueue::topPriorityHigherOrEqual(const CanFrame& rhs_frame) const
  */
 int CanIOManager::sendToIface(uint8_t iface_index, const CanFrame& frame, MonotonicTime tx_deadline, CanIOFlags flags)
 {
-    uavcan_printf_err(0, tx_queues_[0]->getLength(), &frame.id, &frame.data[frame.dlc -1]);
+    uavcan_printf_err(0
+                    , tx_queues_[0]->getLength()
+                    , (tx_queues_[0]->en_queue_cnt_ - tx_queues_[0]->out_queue_cnt_)
+                    , &frame.id
+                    , &frame.data[frame.dlc -1]);
     UAVCAN_ASSERT(iface_index < MaxCanIfaces);
     ICanIface* const iface = driver_.getIface(iface_index);
     if (iface == UAVCAN_NULLPTR)
@@ -329,6 +335,7 @@ int CanIOManager::sendFromTxQueue(uint8_t iface_index)
     if (res > 0)
     {
         tx_queues_[iface_index]->remove(entry);
+        tx_queues_[iface_index]->out_queue_cnt_++;
     }
     return res;
 }
@@ -364,6 +371,7 @@ CanIOManager::CanIOManager(ICanDriver& driver, IPoolAllocator& allocator, ISyste
     {
         mem_blocks_per_iface = allocator.getBlockCapacity() / (num_ifaces_ + 1U) + 1U;
     }
+    printf("mem_blocks_per_iface: %d \r\n", mem_blocks_per_iface);
     UAVCAN_TRACE("CanIOManager", "Memory blocks per iface: %u, total: %u",
                  unsigned(mem_blocks_per_iface), unsigned(allocator.getBlockCapacity()));
 

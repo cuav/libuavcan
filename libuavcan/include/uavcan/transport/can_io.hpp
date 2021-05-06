@@ -113,6 +113,9 @@ public:
 
     uint32_t getRejectedFrameCount() const { return rejected_frames_cnt_; }
 
+    uint32_t en_queue_cnt_ = 0;
+    uint32_t out_queue_cnt_ = 0;
+
     bool isEmpty() const { return queue_.isEmpty(); }
 };
 
